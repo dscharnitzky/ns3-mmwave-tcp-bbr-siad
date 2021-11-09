@@ -644,7 +644,7 @@ void ParseArgs (ScriptConfig *c, int argc, char *argv[]) {
 void SetDefault (const ScriptConfig &c) {
 
   //Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName ("ns3::TcpSiad")));
-  Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName ("ns3::Qubic")));
+  Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName ("ns3::TcpCubic")));
   //Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::IsotropicElements", BooleanValue (true));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::CenterFreq", DoubleValue (c.m_frequency));
 
