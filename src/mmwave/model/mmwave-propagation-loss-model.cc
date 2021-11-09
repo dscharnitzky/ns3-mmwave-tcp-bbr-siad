@@ -76,6 +76,11 @@ MmWavePropagationLossModel::GetTypeId (void)
                    BooleanValue (false),
                    MakeBooleanAccessor (&MmWavePropagationLossModel::m_fixedLossTst),
                    MakeBooleanChecker ())
+    .AddAttribute ("Frequency",
+                   "Center Frequency",
+                   DoubleValue(0.0),
+                   MakeDoubleAccessor(&MmWavePropagationLossModel::m_frequency),
+                   MakeDoubleChecker<double> ())
   ;
   return tid;
 }
