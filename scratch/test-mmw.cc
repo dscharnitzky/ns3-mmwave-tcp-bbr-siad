@@ -445,6 +445,167 @@ void BulkSendApplicationCustomSocket::DataSend (Ptr<Socket> socket, uint32_t)
     }
 }
 
+class MyAppTag : public Tag
+{
+public:
+  MyAppTag ()
+  {
+  }
+
+  MyAppTag (Time sendTs) : m_sendTs (sendTs)
+  {
+  }
+
+  static TypeId GetTypeId (void)
+  {
+    static TypeId tid = TypeId ("ns3::MyAppTag")
+      .SetParent<Tag> ()
+      .AddConstructor<MyAppTag> ();
+    return tid;
+  }
+
+  virtual TypeId  GetInstanceTypeId (void) const
+  {
+    return GetTypeId ();
+  }
+
+  virtual void  Serialize (TagBuffer i) const
+  {
+    i.WriteU64 (m_sendTs.GetNanoSeconds ());
+  }
+
+  virtual void  Deserialize (TagBuffer i)
+  {
+    m_sendTs = NanoSeconds (i.ReadU64 ());
+  }
+
+  virtual uint32_t  GetSerializedSize () const
+  {
+    return sizeof (m_sendTs);
+  }
+
+  virtual void Print (std::ostream &os) const
+  {
+    std::cout << m_sendTs;
+  }
+
+  Time m_sendTs;
+};
+
+
+class MyApp : public Application
+{
+public:
+  MyApp ();
+  virtual ~MyApp ();
+  void ChangeDataRate (DataRate rate);
+  void Setup (Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate);
+
+private:
+  virtual void StartApplication (void);
+  virtual void StopApplication (void);
+
+  void ScheduleTx (void);
+  void SendPacket (void);
+
+  Ptr<Socket>     m_socket;
+  Address         m_peer;
+  uint32_t        m_packetSize;
+  uint32_t        m_nPackets;
+  DataRate        m_dataRate;
+  EventId         m_sendEvent;
+  bool            m_running;
+  uint32_t        m_packetsSent;
+};
+
+MyApp::MyApp ()
+  : m_socket (0),
+    m_peer (),
+    m_packetSize (0),
+    m_nPackets (0),
+    m_dataRate (0),
+    m_sendEvent (),
+    m_running (false),
+    m_packetsSent (0)
+{
+}
+
+MyApp::~MyApp ()
+{
+  m_socket = 0;
+}
+
+void
+MyApp::Setup (Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate)
+{
+  m_socket = socket;
+  m_peer = address;
+  m_packetSize = packetSize;
+  m_nPackets = nPackets;
+  m_dataRate = dataRate;
+}
+
+void
+MyApp::ChangeDataRate (DataRate rate)
+{
+  m_dataRate = rate;
+}
+
+void
+MyApp::StartApplication (void)
+{
+  m_running = true;
+  m_packetsSent = 0;
+  m_socket->Bind ();
+  m_socket->Connect (m_peer);
+  SendPacket ();
+}
+
+void
+MyApp::StopApplication (void)
+{
+  m_running = false;
+
+  if (m_sendEvent.IsRunning ())
+    {
+      Simulator::Cancel (m_sendEvent);
+    }
+
+  if (m_socket)
+    {
+      m_socket->Close ();
+    }
+}
+
+void
+MyApp::SendPacket (void)
+{
+  Ptr<Packet> packet = Create<Packet> (m_packetSize);
+  MyAppTag tag (Simulator::Now ());
+
+  m_socket->Send (packet);
+  if (++m_packetsSent < m_nPackets)
+    {
+      ScheduleTx ();
+    }
+}
+
+
+
+void
+MyApp::ScheduleTx (void)
+{
+  if (m_running)
+    {
+      Time tNext (Seconds (m_packetSize * 8 / static_cast<double> (m_dataRate.GetBitRate ())));
+      m_sendEvent = Simulator::Schedule (tNext, &MyApp::SendPacket, this);
+    }
+}
+
+// **************************************             **************************************
+// ************************************** End of apps **************************************
+// **************************************             **************************************
+
 static double CurrentTime () { 
   return Simulator::Now ().GetSeconds (); 
 }
@@ -566,6 +727,7 @@ typedef struct ScriptConfig {
   std::string m_e2eProt;
   std::string m_simName;
   std::string m_traceDir;
+  std::string cc_prot;
   uint16_t m_numEnb;
   uint16_t m_numUe;
   uint32_t m_seed;
@@ -614,6 +776,7 @@ void ParseArgs (ScriptConfig *c, int argc, char *argv[]) {
   c->m_sfPeriod = 100.0;
   c->m_speed = 3;
   c->m_isRef = false;
+  c->cc_prot = "TcpBbr";
   
   CommandLine cmd;
   cmd.AddValue ("name", "Name used for tracing", c->m_simName);
@@ -630,6 +793,9 @@ void ParseArgs (ScriptConfig *c, int argc, char *argv[]) {
   cmd.AddValue ("fixedTti", "Fixed TTI scheduler", c->m_fixedTti);
   cmd.AddValue ("run", "Run for RNG ", c->m_run);
   cmd.AddValue ("isRef", "Reference or modified network stack", c->m_isRef);
+  cmd.AddValue ("seed", "The seed that is used in the Simulation", c->m_seed);
+  cmd.AddValue ("ccProt" ,"Congestion Control protocol (e.g. TcpSiad, TcpBbr, TcpCubic, etc. used", c->cc_prot);
+  cmd.AddValue ("lteBuff", "LTE buffer size", c->m_rlcBufSize);
   cmd.Parse (argc, argv);
 
   c->m_traceDir += c->m_simName + "/";
@@ -644,17 +810,19 @@ void ParseArgs (ScriptConfig *c, int argc, char *argv[]) {
 void SetDefault (const ScriptConfig &c) {
 
   //Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName ("ns3::TcpSiad")));
-  Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName ("ns3::TcpCubic")));
-  //Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::IsotropicElements", BooleanValue (true));
+  Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName (std::string("ns3::") + c.cc_prot)));
+  Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::IsotropicElements", BooleanValue (true));
+  Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::ElementGain", DoubleValue (0.9));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::CenterFreq", DoubleValue (c.m_frequency));
 
   //TCP
   Config::SetDefault ("ns3::TcpSocketBase::MinRto", TimeValue (MilliSeconds (200)));
   //Config::SetDefault ("ns3::Ipv4L3Protocol::FragmentExpirationTimeout", TimeValue (Seconds (0.2)));
-  Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (2500));
-  //Config::SetDefault ("ns3::TcpSocket::DelAckCount", UintegerValue (1));
-  Config::SetDefault ("ns3::TcpSocket::SndBufSize", UintegerValue (131072*50)); //Default times 50
-  Config::SetDefault ("ns3::TcpSocket::RcvBufSize", UintegerValue (131072*50)); //Default times 50
+  //Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (2500));
+  Config::SetDefault ("ns3::TcpSocket::DelAckCount", UintegerValue (1));
+  Config::SetDefault ("ns3::TcpSocket::SndBufSize", UintegerValue (131072 * 50)); //Default times 50
+  Config::SetDefault ("ns3::TcpSocket::RcvBufSize", UintegerValue (131072 * 50)); //Default times 50
+  //Config::SetDefault ("ns3::UdpSocket::RcvBufSize", UintegerValue (131072 * 50)); //Default times 50
 
   //MaxTxBufferSize
   Config::SetDefault ("ns3::LteRlcUm::MaxTxBufferSize", UintegerValue (c.m_rlcBufSize));
@@ -662,9 +830,9 @@ void SetDefault (const ScriptConfig &c) {
   Config::SetDefault ("ns3::LteRlcAm::MaxTxBufferSize", UintegerValue (c.m_rlcBufSize));
 
   //ReportBufferStatusTimer
-  Config::SetDefault ("ns3::LteRlcAm::ReportBufferStatusTimer", TimeValue (MicroSeconds (100.0)));
-  Config::SetDefault ("ns3::LteRlcUmLowLat::ReportBufferStatusTimer", TimeValue (MicroSeconds (100.0)));
-  Config::SetDefault ("ns3::LteRlcUm::ReportBufferStatusTimer", TimeValue (MicroSeconds (100.0)));
+  Config::SetDefault ("ns3::LteRlcAm::ReportBufferStatusTimer", TimeValue (MicroSeconds (4.0)));
+  Config::SetDefault ("ns3::LteRlcUmLowLat::ReportBufferStatusTimer", TimeValue (MicroSeconds (4.0)));
+  Config::SetDefault ("ns3::LteRlcUm::ReportBufferStatusTimer", TimeValue (MicroSeconds (4.0)));
 
   //Config::SetDefault ("ns3::MmWaveHelper::RlcAmEnabled", BooleanValue (rlcAmEnabled));
   //Config::SetDefault ("ns3::MmWaveHelper::HarqEnabled", BooleanValue (harqEnabled));
@@ -701,7 +869,7 @@ void SetDefault (const ScriptConfig &c) {
 
   //KZS
   Config::SetDefault ("ns3::LteRlcAm::EnableAQM", BooleanValue(false));
-  Config::SetDefault ("ns3::CoDelQueueDisc::Target", StringValue("5ms"));
+  Config::SetDefault ("ns3::CoDelQueueDisc::Target", StringValue("25ms"));
   Config::SetDefault ("ns3::MmWaveHelper::PathlossModel", StringValue ("ns3::MmWavePropagationLossModel"));
 
   /*Config::SetDefault ("ns3::MmWavePhyMacCommon::ResourceBlockNum", UintegerValue (1));
@@ -1315,17 +1483,27 @@ typedef struct AppHolder {
   ApplicationContainer m_clientApps;
 } AppHolder;
 
-void SetupNs3UdpApp (const AppConfig &c, AppHolder *h) {
+void SetupNs3UdpApp (const AppConfig &c, AppHolder *h, const ScriptConfig &sc, std::string id) {
   UdpClientHelper srv (c.m_clientAddr, c.m_clientPort);
-  srv.SetAttribute ("Interval", TimeValue (MicroSeconds (c.m_pktInterval)));
-  srv.SetAttribute ("MaxPackets", UintegerValue (1e6));
+  srv.SetAttribute ("Interval", TimeValue (Seconds (0.00000001)));
+  srv.SetAttribute ("MaxPackets", UintegerValue (1e8));
   h->m_serverApps.Add (srv.Install (h->m_server));
-  h->m_serverApps.Start (Seconds (0.01));
+  h->m_serverApps.Start (Seconds (0.2));
   
   PacketSinkHelper packetSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), c.m_clientPort));
-  h->m_clientApps.Add (packetSinkHelper.Install (h->m_client));
-  h->m_clientApps.Start (Seconds (0.01));
+  ApplicationContainer sinks;
+  sinks.Add (packetSinkHelper.Install (h->m_client));
+  h->m_clientApps.Add (sinks);
+  //h->m_clientApps.Add (packetSinkHelper.Install (h->m_client));
+  h->m_clientApps.Start (Seconds (0.1));
   
+  AsciiTraceHelper asciiTraceHelper;
+  std::string cmd = "mkdir -p " + sc.m_traceDir;
+  if (system (cmd.c_str ())) {
+  }
+  Ptr<OutputStreamWrapper> stream2 = asciiTraceHelper.CreateFileStream (sc.m_traceDir + "mmWave-tcp-data" + id + ".txt");
+  sinks.Get (0)->TraceConnectWithoutContext ("Rx",MakeBoundCallback (&Rx, stream2));
+
   LogHeader ("Constant bitrate UDP application created");
   LogParam ("Server node", h->m_server->GetId ());
   LogParam ("Client node", h->m_client->GetId ());
@@ -1334,15 +1512,20 @@ void SetupNs3UdpApp (const AppConfig &c, AppHolder *h) {
 }
 
 void SetupNs3TcpApp (const AppConfig &c, AppHolder *h, const ScriptConfig &sc, std::string id) {
-
+  //Address sinkAddress (InetSocketAddress (ueIpIface.GetAddress (0), sinkPort));
   Ptr<Socket> ns3TcpSocket = Socket::CreateSocket (h->m_server, TcpSocketFactory::GetTypeId ());
 
+  //Bulkdsend app
   ObjectFactory m_factory;
   m_factory.SetTypeId ("ns3::BulkSendApplicationCustomSocket");
   m_factory.Set ("Protocol", StringValue ("ns3::TcpSocketFactory"));
   m_factory.Set ("Remote", AddressValue (InetSocketAddress (c.m_clientAddr, c.m_clientPort)));
   Ptr<BulkSendApplicationCustomSocket> source = m_factory.Create<BulkSendApplicationCustomSocket> ();
   source->SetSocket (ns3TcpSocket);
+
+  //Timed send app
+  //Ptr<MyApp> source = CreateObject<MyApp> ();
+  //source->Setup (ns3TcpSocket, InetSocketAddress(c.m_clientAddr, c.m_clientPort), 1400, 5000000, DataRate ("2500Mb/s"));
 
   //BulkSendHelper source ("ns3::TcpSocketFactory", InetSocketAddress (c.m_clientAddr, c.m_clientPort));
   //source.SetAttribute ("MaxBytes", UintegerValue (0)); //1e9
@@ -1351,8 +1534,7 @@ void SetupNs3TcpApp (const AppConfig &c, AppHolder *h, const ScriptConfig &sc, s
   h->m_serverApps.Start (Seconds (0.02));
 
   PacketSinkHelper sink ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), c.m_clientPort));
-  ApplicationContainer sinks;
-  sinks.Add (sink.Install (h->m_client));
+  ApplicationContainer sinks = sink.Install (h->m_client);
   h->m_clientApps.Add (sinks);
   h->m_clientApps.Start (Seconds (0.01));
 
@@ -1721,6 +1903,7 @@ int main (int argc, char *argv[]) {
       //AddNs3Gateway (srv, linkHolder.m_addr1, 1);
       AddNs3Gateway (ue, h.m_epcHelper->GetUeDefaultGatewayAddress (), 1);
       SetupNs3TcpApp (appConfig, &appHolder, c, IntToStr (i));
+      //SetupNs3UdpApp (appConfig, &appHolder, c, IntToStr (i));
     }
     
 #endif
