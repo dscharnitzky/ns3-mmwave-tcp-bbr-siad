@@ -818,7 +818,7 @@ void SetDefault (const ScriptConfig &c) {
   //TCP
   Config::SetDefault ("ns3::TcpSocketBase::MinRto", TimeValue (MilliSeconds (200)));
   //Config::SetDefault ("ns3::Ipv4L3Protocol::FragmentExpirationTimeout", TimeValue (Seconds (0.2)));
-  //Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (2500));
+  Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (1500));
   Config::SetDefault ("ns3::TcpSocket::DelAckCount", UintegerValue (1));
   Config::SetDefault ("ns3::TcpSocket::SndBufSize", UintegerValue (131072 * 50)); //Default times 50
   Config::SetDefault ("ns3::TcpSocket::RcvBufSize", UintegerValue (131072 * 50)); //Default times 50
