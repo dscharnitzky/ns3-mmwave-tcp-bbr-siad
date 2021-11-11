@@ -812,7 +812,7 @@ void SetDefault (const ScriptConfig &c) {
   //Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName ("ns3::TcpSiad")));
   Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (TypeId::LookupByName (std::string("ns3::") + c.cc_prot)));
   Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::IsotropicElements", BooleanValue (true));
-  Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::ElementGain", DoubleValue (0.9));
+  //Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::ElementGain", DoubleValue (0.9));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::CenterFreq", DoubleValue (c.m_frequency));
 
   //TCP
@@ -869,7 +869,7 @@ void SetDefault (const ScriptConfig &c) {
 
   //KZS
   Config::SetDefault ("ns3::LteRlcAm::EnableAQM", BooleanValue(false));
-  Config::SetDefault ("ns3::CoDelQueueDisc::Target", StringValue("25ms"));
+  Config::SetDefault ("ns3::CoDelQueueDisc::Target", StringValue("5ms"));
   Config::SetDefault ("ns3::MmWaveHelper::PathlossModel", StringValue ("ns3::MmWavePropagationLossModel"));
 
   /*Config::SetDefault ("ns3::MmWavePhyMacCommon::ResourceBlockNum", UintegerValue (1));
